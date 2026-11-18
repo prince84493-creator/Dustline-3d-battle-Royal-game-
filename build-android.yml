@@ -24,6 +24,9 @@ jobs:
         with:
           gradle-version: '8.13'
 
+      - name: Keep manifest.txt in step with the asset files (prevents "Damaged file" at start-up)
+        run: python3 tools/sync_manifest.py
+
       - name: Restore the upload keystore
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
@@ -31,7 +34,7 @@ jobs:
           if [ -n "$KEYSTORE_BASE64" ]; then
             echo "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/dustline-upload.jks"
             echo "DUSTLINE_KEYSTORE_FILE=$RUNNER_TEMP/dustline-upload.jks" >> "$GITHUB_ENV"
-            echo "Keystore restored: $(stat -c%s "$RUNNER_TEMP/dustline-upload.jks") bytes"
+            echo "Keystore restored"
           else
             echo "::warning::KEYSTORE_BASE64 secret is EMPTY - release APK/AAB will be UNSIGNED."
           fi
@@ -40,4 +43,19 @@ jobs:
         env:
           DUSTLINE_KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           DUSTLINE_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-          DUSTLINE_KEY_PASSWO
+          DUSTLINE_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: gradle --no-daemon --stacktrace assembleDebug assembleRelease bundleRelease
+
+      - name: Collect the files
+        run: |
+          mkdir -p dist
+          cp app/build/outputs/apk/debug/*.apk dist/ || true
+          cp app/build/outputs/apk/release/*.apk dist/ || true
+          cp app/build/outputs/bundle/release/*.aab dist/ || true
+          ls -la dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dustline-build
+          path: dist/*
+          if-no-files-found: error
